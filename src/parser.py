@@ -10,6 +10,7 @@ from collections import deque
 
 ZMQ_SUB_PORT = 5001 # Port to subscribe to via ZMQ
 ZMQ_PUB_PORT = 5002 # Port to publish data to (data will be multiparted so subscriber can filter by topic)
+START_MARKER = b"\xDE\xAD\xBE\xEF"
 
 zmq_context = zmq.Context()
 publisher = zmq_context.socket(zmq.PUB)
@@ -35,41 +36,56 @@ class PacketParser:
         #data = int.from_bytes(data, byteorder='big').to_bytes(len(data), byteorder='big')  # Ensure data is in bytes
         return zlib.crc32(data) & 0xffffffff
     
-    # Parses data buffer looking for full packets
-    # Return: index of packet start and full packet (as a list) or NONE if no full packet found
+    # Parses data buffer looking for full packets.
+    # Returns a full packet as a list of bytes when a complete frame is present, otherwise None.
     # For PHX packets:
     # 0xDEADBEEF is the start of packet (4 bytes)
-    # packet_length (1 byte) -> payload length + 8)
+    # packet_length (1 byte) -> total frame length after the start marker
 
     def parse_buffer(self):
-        # Super simple, just looks for the start of packet and then checks if the buffer has enough bytes for a full packet
-        # If it does, it returns the full packet as a list. If not, it returns None
-        # If buffer has a partial packet, it will wait for more data to be appended to the buffer before returning a full packet
-        try:
-            buffer_bytes = bytes(self.buffer)
-            start_index = buffer_bytes.find(b"\xDE\xAD\xBE\xEF")
-            print(f"Start index of packet: {start_index}")
-            # start_index = self.buffer.index(b"\xDE\xAD\xBE\xEF") # find the start of the packet')
-            discard = [self.buffer.popleft() for byte in range(start_index)] # discard any bytes before the start of the packet
-            print(f"Discarded bytes before packet start: {discard}")
-            if start_index + 4 < len(self.buffer):
-                packet_length = self.buffer[start_index + 4] # get the packet length from the buffer
-                print(f"Packet length: {packet_length}")
-                if packet_length > len(self.buffer) - start_index:
-                    print(f"Packet length {packet_length} is greater than buffer length {len(self.buffer) - start_index}. Waiting for more data.")
-                    return None
-                
-                packet = [self.buffer.popleft() for byte in range(min(start_index + packet_length, len(self.buffer)))]
-                return packet
-            else:
-                print("Not enough bytes in buffer to determine packet length. Waiting for more data.")
-                return None
-            
-        except ValueError:
-            print('Packet start not found')
+        if not self.buffer:
             return None
+
+        buffer_bytes = bytes(self.buffer)
+        start_index = buffer_bytes.find(START_MARKER)
+
+        if start_index == -1:
+            print("Packet start not found; clearing stale bytes")
+            self.buffer.clear()
+            return None
+
+        if start_index > 0:
+            discarded = [self.buffer.popleft() for _ in range(start_index)]
+            print(f"Discarded bytes before packet start: {discarded}")
+            buffer_bytes = bytes(self.buffer)
+            start_index = 0
+
+        if len(buffer_bytes) < 8:
+            print("Not enough bytes in buffer to determine packet length. Waiting for more data.")
+            return None
+
+        packet_length = buffer_bytes[4]
+        total_frame_length = 4 + packet_length
+        print(f"Start index of packet: {start_index}")
+        print(f"Packet length: {packet_length}")
+
+        if len(buffer_bytes) < total_frame_length:
+            print(
+                f"Packet length {packet_length} is greater than available bytes {len(buffer_bytes)}. "
+                "Waiting for more data."
+            )
+            return None
+
+        frame = list(buffer_bytes[:total_frame_length])
+        for _ in range(total_frame_length):
+            self.buffer.popleft()
+        return frame
         
     def parse_telemetry(self, payload):
+        if len(payload) < 62:
+            print(f"Telemetry payload too short for EKF packet: {len(payload)} bytes")
+            return None
+
         print('Parsing telem data:')
         telem_type = payload[0]
         match telem_type:
@@ -100,35 +116,107 @@ class PacketParser:
             case 0x01:
                 print("Sensor Telemetry Packet Received")
                 #parse the sensor packet
+                utc_time = int.from_bytes(payload[2:6], byteorder='big') # NEED TO VERIFY ENDIANNESS FOR ALL OF THESE
+                high_g_accel_x_int = struct.unpack('>f', payload[6:10])[0]
+                high_g_accel_x_frac = struct.unpack('>f', payload[10:14])[0]
+                high_g_accel_x = high_g_accel_x_int + (high_g_accel_x_frac / 1000000)
+                high_g_accel_y_int = struct.unpack('>f', payload[14:18])[0]
+                high_g_accel_y_frac = struct.unpack('>f', payload[18:22])[0]
+                high_g_accel_y = high_g_accel_y_int + (high_g_accel_y_frac / 1000000)
+                high_g_accel_z_int = struct.unpack('>f', payload[22:26])[0]
+                high_g_accel_z_frac = struct.unpack('>f', payload[26:30])[0]
+                high_g_accel_z = high_g_accel_z_int + (high_g_accel_z_frac / 1000000)
+                imu_accel_x_int = struct.unpack('>f', payload[30:34])[0]
+                imu_accel_x_frac = struct.unpack('>f', payload[34:38])[0]
+                imu_accel_x = imu_accel_x_int + (imu_accel_x_frac / 1000000)
+                imu_accel_y_int = struct.unpack('>f', payload[38:42])[0]
+                imu_accel_y_frac = struct.unpack('>f', payload[42:46])[0]
+                imu_accel_y = imu_accel_y_int + (imu_accel_y_frac / 1000000)
+                imu_accel_z_int = struct.unpack('>f', payload[46:50])[0]
+                imu_accel_z_frac = struct.unpack('>f', payload[50:54])[0]
+                imu_accel_z = imu_accel_y_int + (imu_accel_y_frac / 1000000)
+                imu_gyro_x_int = struct.unpack('>f', payload[54:58])[0]
+                imu_gyro_x_frac = struct.unpack('>f', payload[58:62])[0]
+                imu_gyro_x = imu_gyro_x_int + (imu_gyro_x_frac / 1000000)
+                imu_gyro_y_int = struct.unpack('>f', payload[62:66])[0]
+                imu_gyro_y_frac = struct.unpack('>f', payload[66:70])[0]
+                imu_gyro_y = imu_gyro_y_int + (imu_gyro_y_frac / 1000000)
+                imu_gyro_z_int = struct.unpack('>f', payload[70:74])[0]
+                imu_gyro_z_frac = struct.unpack('>f', payload[74:78])[0]
+                imu_gyro_z = imu_gyro_z_int + (imu_gyro_z_frac / 1000000)
+                pressure_int = struct.unpack('>f', payload[78:82])[0]
+                pressure_frac = struct.unpack('>f', payload[82:86])[0]
+                pressure = pressure_int + (pressure_frac / 1000000)
+                temperature_int = struct.unpack('>f', payload[86:90])[0]
+                temperature_frac = struct.unpack('>f', payload[90:94])[0]
+                temperature = temperature_int + (temperature_frac / 1000000)
+                longitude_int = struct.unpack('>f', payload[94:98])[0]
+                longitude_frac = struct.unpack('>f', payload[98:102])[0]
+                longitude = longitude_int + (longitude_frac / 1000000)
+                latitude_int = struct.unpack('>f', payload[102:106])[0]
+                latitude_frac = struct.unpack('>f', payload[106:110])[0]
+                latitude = latitude_int + (latitude_frac / 1000000)
+                altitude_int = struct.unpack('>f', payload[110:114])[0]
+                altitude_frac = struct.unpack('>f', payload[114:118])[0]
+                altitude = altitude_int + (altitude_frac / 1000000)
                 #publish the sensor packet w/ sensor topic
-                publisher.send_multipart([b"sensor", payload])
+                parsed_packet = [utc_time, high_g_accel_x, high_g_accel_y, high_g_accel_z, imu_accel_x, imu_accel_y, imu_accel_z, imu_gyro_x, 
+                                 imu_gyro_y, imu_gyro_z, pressure, temperature, longitude, latitude, altitude]
+                parsed_packet = json.dumps(parsed_packet).encode('utf-8') # convert to json and encode to bytes
+                publisher.send_multipart([b"sensor", parsed_packet])
             case 0x02:
                 print("State Telemetry Packet Received")
                 #parse the state packet
                 #publish the state packet w/ state topic
-                publisher.send_multipart([b"state", payload])
+                publisher.send_multipart([b"state", parsed_packet])
+
+    def parse_battery(self, payload):
+        print(f"Battery packet received: {payload}")
+
+    def parse_ascii(self, payload):
+        print(f"ASCII packet received: {payload}")
+
+    def parse_ack(self, payload):
+        print(f"ACK packet received: {payload}")
 
     # 0xDEADBEEF is the start of packet (4 bytes)
-    # packet_length (1 byte) -> payload length + 8
-    # packet_type (1 byte) -> 0x01(telem), 0x02(battery), 0x03(ASCII), 0x04 (ACK)
+    # packet_length (1 byte) -> total frame length after the start marker
+    # packet_type (1 byte) -> 0x01(telem), 0x02(battery), 0x03(ASCII), 0x04(ACK)
     # packet_number (1 byte)
     # payload_length (1 byte) -> length of payload
     # payload (variable length)
     # CRC32 (4 bytes, big endian)
     def parse_packet(self, packet):
+        if not packet or len(packet) < 8:
+            print("Packet too short to parse")
+            return None
+
+        if packet[:4] != START_MARKER:
+            print("Packet marker mismatch")
+            return None
+
         print(f"Parsing packet: {packet}")
-        packet = packet[4:] # remove the start of packet
-        packet_length = packet[0]
-        packet_type = packet[1]
+        frame_without_marker = packet[4:]
+        packet_length = frame_without_marker[0]
+        if len(frame_without_marker) != packet_length:
+            print(f"Packet length mismatch: expected {packet_length} bytes after marker, got {len(frame_without_marker)}")
+            return None
+
+        packet_type = frame_without_marker[1]
         print(f'Packet Type: {packet_type}')
-        packet_number = packet[2]
-        payload_length = packet[3]
-        payload = packet[4:4+payload_length]
-        crc32 = int.from_bytes(packet[-4:], byteorder='big') # last 4 bytes are the CRC32
-        packet = packet[:-4] # remove the CRC32
-        # if(crc32 != self.calculate_crc32(packet)):
-        #     print(f"CRC32 mismatch! Calculated: {self.calculate_crc32(packet)}, Received: {crc32}")
-        #     return None
+        packet_number = frame_without_marker[2]
+        payload_length = frame_without_marker[3]
+        if len(frame_without_marker) < 4 + payload_length + 4:
+            print("Packet payload is truncated")
+            return None
+
+        payload = frame_without_marker[4:4+payload_length]
+        crc32 = int.from_bytes(frame_without_marker[-4:], byteorder='big')
+        packet_without_crc = frame_without_marker[:-4]
+        if crc32 != self.calculate_crc32(packet_without_crc):
+            print(f"CRC32 mismatch! Calculated: {self.calculate_crc32(packet_without_crc)}, Received: {crc32}")
+            return None
+
         match packet_type:
             case 0x01:
                 print(f"Telemetry packet received: {payload}")

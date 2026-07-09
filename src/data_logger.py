@@ -3,17 +3,15 @@
 import zmq
 import json
 import csv
+import os
 
 ZMQ_SUB_PORT = 5002 # Port to subscribe to via ZMQ
 
 zmq_context = zmq.Context()
-# topic, payload = subscriber.recv_multipart()
-# data = json.loads(payload.decode("utf-8"))
-# print(data)
 
 # 0 = not logging, 1 = logging
 log_channels = {
-    "ekf": 0,
+    "ekf": 1,
     "sensor": 0,
     "state": 0,
 }
@@ -31,7 +29,7 @@ try:
                 with open(f"{topic.decode('utf-8')}_log.csv", "a", newline='') as csvfile:
                     writer = csv.writer(csvfile)
                     data = json.loads(payload.decode("utf-8"))
-                    writer.writerow(data.values())
+                    writer.writerow(data)
                 pass
 
 except KeyboardInterrupt:
