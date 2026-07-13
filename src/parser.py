@@ -82,9 +82,9 @@ class PacketParser:
         return frame
         
     def parse_telemetry(self, payload):
-        if len(payload) < 62:
-            print(f"Telemetry payload too short for EKF packet: {len(payload)} bytes")
-            return None
+        # if len(payload) < 62:
+        #     print(f"Telemetry payload too short for EKF packet: {len(payload)} bytes")
+        #     return None
 
         print('Parsing telem data:')
         telem_type = payload[0]
@@ -117,47 +117,47 @@ class PacketParser:
                 print("Sensor Telemetry Packet Received")
                 #parse the sensor packet
                 utc_time = int.from_bytes(payload[2:6], byteorder='big') # NEED TO VERIFY ENDIANNESS FOR ALL OF THESE
-                high_g_accel_x_int = struct.unpack('>f', payload[6:10])[0]
-                high_g_accel_x_frac = struct.unpack('>f', payload[10:14])[0]
+                high_g_accel_x_int = struct.unpack('>i', payload[6:10])[0]
+                high_g_accel_x_frac = struct.unpack('>i', payload[10:14])[0]
                 high_g_accel_x = high_g_accel_x_int + (high_g_accel_x_frac / 1000000)
-                high_g_accel_y_int = struct.unpack('>f', payload[14:18])[0]
-                high_g_accel_y_frac = struct.unpack('>f', payload[18:22])[0]
+                high_g_accel_y_int = struct.unpack('>i', payload[14:18])[0]
+                high_g_accel_y_frac = struct.unpack('>i', payload[18:22])[0]
                 high_g_accel_y = high_g_accel_y_int + (high_g_accel_y_frac / 1000000)
-                high_g_accel_z_int = struct.unpack('>f', payload[22:26])[0]
-                high_g_accel_z_frac = struct.unpack('>f', payload[26:30])[0]
+                high_g_accel_z_int = struct.unpack('>i', payload[22:26])[0]
+                high_g_accel_z_frac = struct.unpack('>i', payload[26:30])[0]
                 high_g_accel_z = high_g_accel_z_int + (high_g_accel_z_frac / 1000000)
-                imu_accel_x_int = struct.unpack('>f', payload[30:34])[0]
-                imu_accel_x_frac = struct.unpack('>f', payload[34:38])[0]
+                imu_accel_x_int = struct.unpack('>i', payload[30:34])[0]
+                imu_accel_x_frac = struct.unpack('>i', payload[34:38])[0]
                 imu_accel_x = imu_accel_x_int + (imu_accel_x_frac / 1000000)
-                imu_accel_y_int = struct.unpack('>f', payload[38:42])[0]
-                imu_accel_y_frac = struct.unpack('>f', payload[42:46])[0]
+                imu_accel_y_int = struct.unpack('>i', payload[38:42])[0]
+                imu_accel_y_frac = struct.unpack('>i', payload[42:46])[0]
                 imu_accel_y = imu_accel_y_int + (imu_accel_y_frac / 1000000)
-                imu_accel_z_int = struct.unpack('>f', payload[46:50])[0]
-                imu_accel_z_frac = struct.unpack('>f', payload[50:54])[0]
-                imu_accel_z = imu_accel_y_int + (imu_accel_y_frac / 1000000)
-                imu_gyro_x_int = struct.unpack('>f', payload[54:58])[0]
-                imu_gyro_x_frac = struct.unpack('>f', payload[58:62])[0]
+                imu_accel_z_int = struct.unpack('>i', payload[46:50])[0]
+                imu_accel_z_frac = struct.unpack('>i', payload[50:54])[0]
+                imu_accel_z = imu_accel_z_int + (imu_accel_z_frac / 1000000)
+                imu_gyro_x_int = struct.unpack('>i', payload[54:58])[0]
+                imu_gyro_x_frac = struct.unpack('>i', payload[58:62])[0]
                 imu_gyro_x = imu_gyro_x_int + (imu_gyro_x_frac / 1000000)
-                imu_gyro_y_int = struct.unpack('>f', payload[62:66])[0]
-                imu_gyro_y_frac = struct.unpack('>f', payload[66:70])[0]
+                imu_gyro_y_int = struct.unpack('>i', payload[62:66])[0]
+                imu_gyro_y_frac = struct.unpack('>i', payload[66:70])[0]
                 imu_gyro_y = imu_gyro_y_int + (imu_gyro_y_frac / 1000000)
-                imu_gyro_z_int = struct.unpack('>f', payload[70:74])[0]
-                imu_gyro_z_frac = struct.unpack('>f', payload[74:78])[0]
+                imu_gyro_z_int = struct.unpack('>i', payload[70:74])[0]
+                imu_gyro_z_frac = struct.unpack('>i', payload[74:78])[0]
                 imu_gyro_z = imu_gyro_z_int + (imu_gyro_z_frac / 1000000)
-                pressure_int = struct.unpack('>f', payload[78:82])[0]
-                pressure_frac = struct.unpack('>f', payload[82:86])[0]
+                pressure_int = struct.unpack('>i', payload[78:82])[0]
+                pressure_frac = struct.unpack('>i', payload[82:86])[0]
                 pressure = pressure_int + (pressure_frac / 1000000)
-                temperature_int = struct.unpack('>f', payload[86:90])[0]
-                temperature_frac = struct.unpack('>f', payload[90:94])[0]
+                temperature_int = struct.unpack('>i', payload[86:90])[0]
+                temperature_frac = struct.unpack('>i', payload[90:94])[0]
                 temperature = temperature_int + (temperature_frac / 1000000)
-                longitude_int = struct.unpack('>f', payload[94:98])[0]
-                longitude_frac = struct.unpack('>f', payload[98:102])[0]
+                longitude_int = struct.unpack('>i', payload[94:98])[0]
+                longitude_frac = struct.unpack('>i', payload[98:102])[0]
                 longitude = longitude_int + (longitude_frac / 1000000)
-                latitude_int = struct.unpack('>f', payload[102:106])[0]
-                latitude_frac = struct.unpack('>f', payload[106:110])[0]
+                latitude_int = struct.unpack('>i', payload[102:106])[0]
+                latitude_frac = struct.unpack('>i', payload[106:110])[0]
                 latitude = latitude_int + (latitude_frac / 1000000)
-                altitude_int = struct.unpack('>f', payload[110:114])[0]
-                altitude_frac = struct.unpack('>f', payload[114:118])[0]
+                altitude_int = struct.unpack('>i', payload[110:114])[0]
+                altitude_frac = struct.unpack('>i', payload[114:118])[0]
                 altitude = altitude_int + (altitude_frac / 1000000)
                 #publish the sensor packet w/ sensor topic
                 parsed_packet = [utc_time, high_g_accel_x, high_g_accel_y, high_g_accel_z, imu_accel_x, imu_accel_y, imu_accel_z, imu_gyro_x, 
@@ -257,4 +257,6 @@ try:
 except KeyboardInterrupt:
     print("Exiting Parser")
 finally:
+    # cleanup
+    publisher.close()   
     zmq_context.term()

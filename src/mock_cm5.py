@@ -1,3 +1,5 @@
+# Mock Data Source so we can test the pipeline.
+# Author: Claude
 import socket
 import struct
 import time
@@ -5,6 +7,14 @@ import zlib
 
 HOST = "127.0.0.1"
 PORT = 5000
+
+# Packet types (goes in the frame header)
+PACKET_TYPE_EKF = 0x01
+PACKET_TYPE_SENSOR = 0x01
+
+# Telemetry types (first byte inside the payload itself)
+TELEM_TYPE_EKF = 0x00
+TELEM_TYPE_SENSOR = 0x01
 
 
 def build_packet(packet_type: int, payload: bytes, packet_number: int = 0x01) -> bytes:
@@ -18,7 +28,7 @@ def build_packet(packet_type: int, payload: bytes, packet_number: int = 0x01) ->
 
 
 def build_invalid_packet(kind: str) -> bytes:
-    valid_packet = build_packet(0x01, make_sample_ekf_payload())
+    valid_packet = build_packet(PACKET_TYPE_EKF, make_sample_ekf_payload())
 
     if kind == "bad_crc":
         bad_crc = bytearray(valid_packet)
@@ -43,7 +53,7 @@ def build_invalid_packet(kind: str) -> bytes:
 
 
 def make_sample_ekf_payload() -> bytes:
-    telem_type = 0x00
+    telem_type = TELEM_TYPE_EKF
     valid = 0x01
     utc_time = 1700000000
     values = (
@@ -66,7 +76,7 @@ def make_sample_ekf_payload() -> bytes:
 
 
 def make_sample_ekf_payload_variant() -> bytes:
-    telem_type = 0x00
+    telem_type = TELEM_TYPE_EKF
     valid = 0x01
     utc_time = 1700010000
     values = (
@@ -88,6 +98,80 @@ def make_sample_ekf_payload_variant() -> bytes:
     return struct.pack(">BBI" + "f" * len(values), telem_type, valid, utc_time, *values)
 
 
+def encode_int_frac(value: float) -> tuple[int, int]:
+    """Split a float into (int_part, frac_part) such that
+    value == int_part + frac_part / 1_000_000, matching the receiver's
+    decode logic. frac_part carries the same sign as the value so negative
+    numbers round-trip correctly.
+    """
+    int_part = int(value)  # truncates toward zero, same as the receiver assumes
+    frac_part = round((value - int_part) * 1_000_000)
+    return int_part, frac_part
+
+
+def make_sensor_payload(utc_time: int, values: tuple) -> bytes:
+    """Builds a sensor payload matching the receiver's parsing layout:
+    telem_type(B) valid(B) utc_time(I) then 14x [int_part(i) frac_part(i)]
+    in the order: high_g_accel(x,y,z), imu_accel(x,y,z), imu_gyro(x,y,z),
+    pressure, temperature, longitude, latitude, altitude.
+    """
+    telem_type = TELEM_TYPE_SENSOR
+    valid = 0x01
+
+    if len(values) != 14:
+        raise ValueError(f"Expected 14 sensor values, got {len(values)}")
+
+    parts = []
+    for v in values:
+        int_part, frac_part = encode_int_frac(v)
+        parts.append(int_part)
+        parts.append(frac_part)
+
+    return struct.pack(">BBI" + "ii" * 14, telem_type, valid, utc_time, *parts)
+
+
+def make_sample_sensor_payload() -> bytes:
+    utc_time = 1700000000
+    values = (
+        0.12,    # high_g_accel_x
+        -0.05,   # high_g_accel_y
+        9.79,    # high_g_accel_z
+        0.10,    # imu_accel_x
+        -0.02,   # imu_accel_y
+        9.81,    # imu_accel_z
+        0.001,   # imu_gyro_x
+        -0.003,  # imu_gyro_y
+        0.0005,  # imu_gyro_z
+        101325.0,   # pressure (Pa)
+        22.5,       # temperature (C)
+        -104.9903,  # longitude
+        39.7392,    # latitude
+        1609.3,     # altitude (m)
+    )
+    return make_sensor_payload(utc_time, values)
+
+
+def make_sample_sensor_payload_variant() -> bytes:
+    utc_time = 1700010000
+    values = (
+        0.34,
+        -0.11,
+        9.75,
+        0.22,
+        -0.04,
+        9.77,
+        0.0015,
+        -0.0042,
+        0.0009,
+        101280.5,
+        23.1,
+        -104.9911,
+        39.7401,
+        1622.7,
+    )
+    return make_sensor_payload(utc_time, values)
+
+
 def main() -> None:
     sock = None
     try:
@@ -96,16 +180,22 @@ def main() -> None:
         print(f"Mock CM5 sending UDP packets to {HOST}:{PORT}")
 
         packet_sequence = [
-            ("valid_ekf_1", 0x01, make_sample_ekf_payload()),
-            ("valid_ekf_2", 0x01, make_sample_ekf_payload_variant()),
+            ("valid_ekf_1", PACKET_TYPE_EKF, make_sample_ekf_payload()),
+            ("valid_sensor_1", PACKET_TYPE_SENSOR, make_sample_sensor_payload()),
+            ("valid_ekf_2", PACKET_TYPE_EKF, make_sample_ekf_payload_variant()),
+            ("valid_sensor_2", PACKET_TYPE_SENSOR, make_sample_sensor_payload_variant()),
             ("invalid_bad_crc", None, None),
-            ("valid_ekf_3", 0x01, make_sample_ekf_payload()),
+            ("valid_ekf_3", PACKET_TYPE_EKF, make_sample_ekf_payload()),
+            ("valid_sensor_3", PACKET_TYPE_SENSOR, make_sample_sensor_payload()),
             ("invalid_bad_marker", None, None),
-            ("valid_ekf_4", 0x01, make_sample_ekf_payload_variant()),
+            ("valid_ekf_4", PACKET_TYPE_EKF, make_sample_ekf_payload_variant()),
+            ("valid_sensor_4", PACKET_TYPE_SENSOR, make_sample_sensor_payload_variant()),
             ("invalid_truncated", None, None),
-            ("valid_ekf_5", 0x01, make_sample_ekf_payload()),
+            ("valid_ekf_5", PACKET_TYPE_EKF, make_sample_ekf_payload()),
+            ("valid_sensor_5", PACKET_TYPE_SENSOR, make_sample_sensor_payload()),
             ("invalid_bad_length", None, None),
-            ("valid_ekf_6", 0x01, make_sample_ekf_payload_variant()),
+            ("valid_ekf_6", PACKET_TYPE_EKF, make_sample_ekf_payload_variant()),
+            ("valid_sensor_6", PACKET_TYPE_SENSOR, make_sample_sensor_payload_variant()),
             ("invalid_short_header", None, None),
         ]
         next_index = 0

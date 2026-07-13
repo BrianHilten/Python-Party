@@ -20,7 +20,7 @@ try:
 
         # Core loop
         while True:
-            cm5_data, addr = udp_port.recvfrom(1024) # blocks and wats for new connection 
+            cm5_data, addr = udp_port.recvfrom(1024) # blocks and waits for new connection 
             print(f"Connected to {addr}")
             print(f"Received: {len(cm5_data)} bytes from {addr}: {cm5_data}")
             if not cm5_data:
